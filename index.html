@@ -3396,11 +3396,19 @@ const SUI = {
   },
   changeKind(k) {
     if (k === STUDIO.kind) return;
-    const keep = STUDIO.frames[0];
-    const [w, h] = KINDS[k].sizes.find(s => s[0] === STUDIO.W && s[1] === STUDIO.H) || KINDS[k].sizes[0];
+    const keep = STUDIO.frames[0], oW = STUDIO.W, oH = STUDIO.H;
+    const tile = k === "mark" || k === "hinder";
+    const [w, h] = tile ? [16, 16] : k === "figur" || k === "objekt" ? [oW, oH] : KINDS[k].sizes.find(s => s[0] === oW && s[1] === oH) || [oW, oH];
     snapshot(true);
     studioNew(k, w, h);
-    if (w === STUDIO.W && h === STUDIO.H && keep && keep.length === w * h) STUDIO.frames[0] = keep.slice();
+    // flytta det ritade så att nederkanten hamnar längst ner och i mitten
+    let minX = oW, maxX = -1, maxY = -1;
+    for (let y = 0; y < oH; y++) for (let x = 0; x < oW; x++) if (keep[y * oW + x]) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+    if (maxY >= 0) {
+      const dy = (h - 1) - maxY, dx = Math.floor((w - (maxX - minX + 1)) / 2) - minX, f = STUDIO.frames[0];
+      for (let y = 0; y < oH; y++) for (let x = 0; x < oW; x++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < w && ny < h) f[ny * w + nx] = keep[y * oW + x]; }
+    }
+    if (k === "hinder") STUDIO.solid = true;
     STUDIO.dirty = true;
     this.refresh();
   },

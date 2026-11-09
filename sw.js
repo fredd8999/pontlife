@@ -1,5 +1,5 @@
 // Pontlife – gör att appen fungerar utan internet efter första besöket
-const CACHE = "pontlife-8422e126";
+const CACHE = "pontlife-25256371";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {

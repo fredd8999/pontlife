@@ -4436,8 +4436,10 @@ function splashLoop(ts) {
   const dpr = Math.min(3, devicePixelRatio || 1);
   const cw = Math.round(splashCanvas.clientWidth * dpr), ch = Math.round(splashCanvas.clientHeight * dpr);
   if (splashCanvas.width !== cw || splashCanvas.height !== ch) { splashCanvas.width = cw; splashCanvas.height = ch; }
-  const k = ch / VH;                     // skala: hela höjden
+  // skala: hela höjden i liggande läge, hela bredden i stående (då fyller himlen och skogen ut ovanför och under)
+  const k = Math.min(ch / VH, cw / VW);
   const ox = (cw - VW * k) / 2;          // mitten
+  const oy = Math.max(0, (ch - VH * k) * 0.22);   // stående: scenen lite ovanför mitten så att menyn får plats under
   const g = sctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.imageSmoothingEnabled = false;
@@ -4447,8 +4449,8 @@ function splashLoop(ts) {
     const s = (opt.s || 1) * k;
     g.globalAlpha = opt.a === undefined ? 1 : Math.max(0, Math.min(1, opt.a));
     const w = (opt.sw || im.width) * s, h = (opt.sh || im.height) * s;
-    if (opt.center) g.drawImage(im, opt.sx || 0, opt.sy || 0, opt.sw || im.width, opt.sh || im.height, Math.round(ox + x * k - w / 2), Math.round(y * k - h / 2), Math.round(w), Math.round(h));
-    else g.drawImage(im, opt.sx || 0, opt.sy || 0, opt.sw || im.width, opt.sh || im.height, Math.round(ox + x * k), Math.round(y * k), Math.round(w), Math.round(h));
+    if (opt.center) g.drawImage(im, opt.sx || 0, opt.sy || 0, opt.sw || im.width, opt.sh || im.height, Math.round(ox + x * k - w / 2), Math.round(oy + y * k - h / 2), Math.round(w), Math.round(h));
+    else g.drawImage(im, opt.sx || 0, opt.sy || 0, opt.sw || im.width, opt.sh || im.height, Math.round(ox + x * k), Math.round(oy + y * k), Math.round(w), Math.round(h));
     g.globalAlpha = 1;
   };
   // lager som rullar i sidled och fyller hela bredden
@@ -4457,7 +4459,7 @@ function splashLoop(ts) {
     const w = im.width * k, h = im.height * k;
     const off = ((SPLASH.sceneT * speed) % im.width) * k;
     let xx = (((ox - off) % w) + w) % w - w;
-    for (; xx < cw; xx += w) g.drawImage(im, Math.round(xx), Math.round(y * k), Math.ceil(w) + 1, Math.round(h));
+    for (; xx < cw; xx += w) g.drawImage(im, Math.round(xx), Math.round(oy + y * k), Math.ceil(w) + 1, Math.round(h));
   };
 
   if (SPLASH.phase === "studio") {
@@ -4476,24 +4478,38 @@ function splashLoop(ts) {
   // himmel (sträckt åt sidorna)
   const sky = IMG["Splash/sky"];
   if (sky && sky.width) {
-    g.drawImage(sky, 0, 0, 1, VH, 0, Math.round(-pan * 0.2 * k), Math.round(ox) + 1, Math.round(VH * k));
-    g.drawImage(sky, VW - 1, 0, 1, VH, Math.round(ox + VW * k) - 1, Math.round(-pan * 0.2 * k), Math.round(ox) + 2, Math.round(VH * k));
-    g.drawImage(sky, Math.round(ox), Math.round(-pan * 0.2 * k), Math.round(VW * k), Math.round(VH * k));
+    const sy = Math.round(oy - pan * 0.2 * k);
+    if (sy > 0) g.drawImage(sky, 0, 0, VW, 1, 0, 0, cw, sy + 1);   // stående: himlen fortsätter uppåt
+    g.drawImage(sky, 0, 0, 1, VH, 0, sy, Math.round(ox) + 1, Math.round(VH * k));
+    g.drawImage(sky, VW - 1, 0, 1, VH, Math.round(ox + VW * k) - 1, sy, Math.round(ox) + 2, Math.round(VH * k));
+    g.drawImage(sky, Math.round(ox), sy, Math.round(VW * k), Math.round(VH * k));
   }
   // stjärnor som blinkar
   g.globalAlpha = 0.6 + 0.4 * Math.sin(t * 3);
-  const st = IMG["Splash/stars"]; if (st && st.width) { for (let xx = ox - Math.ceil(ox / (VW * k)) * VW * k; xx < cw; xx += VW * k) g.drawImage(st, Math.round(xx), Math.round(-pan * 0.2 * k), Math.round(VW * k), Math.round(VH * k)); }
+  const st = IMG["Splash/stars"]; if (st && st.width) {
+    for (let yy = oy - pan * 0.2 * k; yy > -VH * k; yy -= VH * k)
+      for (let xx = ox - Math.ceil(ox / (VW * k)) * VW * k; xx < cw; xx += VW * k) g.drawImage(st, Math.round(xx), Math.round(yy), Math.round(VW * k), Math.round(VH * k));
+  }
   g.globalAlpha = 1;
   strip("mountains", 96 + pan * 0.4, 1.5);
   draw("castle", VW / 2, 118 + pan * 0.6, { center: true });
   strip("forest_back", 128 + pan * 0.8, 4);
   g.globalAlpha = 0.8; strip("mist", 168 + pan * 0.9, 9); g.globalAlpha = 1;
   strip("forest_front", 150 + pan, 7);
+  // stående: skogsbotten fortsätter neråt
+  const groundTop = Math.round(oy + (150 + pan + 78) * k);
+  if (groundTop < ch) {
+    const ff = IMG["Splash/forest_front"];
+    if (ff && ff.width) g.drawImage(ff, 0, ff.height - 1, ff.width, 1, 0, groundTop, cw, ch - groundTop);
+    const gr = g.createLinearGradient(0, groundTop, 0, ch);
+    gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,0.55)");
+    g.fillStyle = gr; g.fillRect(0, groundTop, cw, ch - groundTop);
+  }
   // eldflugor
   for (const f of SPLASH.fireflies) {
     f.p += dt; const x = (f.x + Math.sin(f.p * 0.7) * 10 + t * 3) % VW, y = f.y + pan + Math.sin(f.p * 1.3) * 6;
     g.globalAlpha = 0.4 + 0.6 * Math.abs(Math.sin(f.p * 2));
-    g.fillStyle = "#fff6a0"; g.fillRect(Math.round(ox + x * k), Math.round(y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k)));
+    g.fillStyle = "#fff6a0"; g.fillRect(Math.round(ox + x * k), Math.round(oy + y * k), Math.max(1, Math.round(k)), Math.max(1, Math.round(k)));
   }
   g.globalAlpha = 1;
   // titel och svärd
@@ -5810,6 +5826,475 @@ addEventListener("keydown", e => {
   if (ED.tool === "area" && (k === "delete" || k === "backspace") && AREA.rect) { e.preventDefault(); areaDo("clear"); return; }
   if (ED.tool === "area" && k === "escape") { AREA.pasting = false; AREA.rect = null; refreshAreaPanel(); UI.refreshTools(); }
 });
+
+// ============================================================================
+//  UTFORSKA – en oändlig, slumpad öppen värld (test)
+//  Världen byggs av rutor ("chunks") på 32×24. Gå ut över kanten så kommer nästa.
+//  Allt räknas fram ur ett frö: samma värld ser likadan ut när man går tillbaka,
+//  men ett nytt äventyr ger en helt ny värld. Terrängen hänger ihop över kanterna.
+//  Banor heter "vg:x,y" (världen) och "vgd:x,y" (grottan under ruta x,y).
+// ============================================================================
+const WG = { W: 32, H: 24, cache: new Map(), cacheSeed: null };
+const inWorld = () => typeof G.levelName === "string" && G.levelName.startsWith("vg");
+
+// ----------------------------------------------------------------------------- slump och brus
+function wgHash(...n) {
+  let h = 2166136261 ^ (G.worldSeed | 0);
+  for (const v of n) { h = Math.imul(h ^ (v | 0), 16777619); h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15; }
+  return h >>> 0;
+}
+function wgRng(...n) {   // mulberry32
+  let a = wgHash(...n);
+  return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const lattice = (x, y, k) => wgHash(x, y, k) / 4294967296;
+function vnoise(x, y, k) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = lattice(x0, y0, k), b = lattice(x0 + 1, y0, k), c = lattice(x0, y0 + 1, k), d = lattice(x0 + 1, y0 + 1, k);
+  return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy;
+}
+function fbm(x, y, k) { return (vnoise(x, y, k) * 0.57 + vnoise(x * 2.1, y * 2.1, k + 11) * 0.29 + vnoise(x * 4.3, y * 4.3, k + 23) * 0.14); }
+const pick = (r, arr) => arr[Math.floor(r() * arr.length) % arr.length];
+
+// ----------------------------------------------------------------------------- terräng
+// världskoordinater -> { biome, ground, obst, road }
+function terrain(wx, wy) {
+  let e = fbm(wx / 34, wy / 34, 1), m = fbm(wx / 46 + 50, wy / 46 - 30, 2);
+  const r = fbm(wx / 70 - 20, wy / 70 + 40, 3);
+  // runt startplatsen är det alltid lugn äng
+  const d0 = Math.hypot(wx - WG.W / 2, wy - WG.H / 2);
+  if (d0 < 16) { const k = Math.max(0, (d0 - 6) / 10); e = 0.5 + (e - 0.5) * k; m = 0.45 + (m - 0.45) * k; }
+  const road = Math.abs(r - 0.5) < 0.016;
+  if (e < 0.30) return { biome: "sjö", ground: "sand", obst: "water" };
+  if (e < 0.34) return { biome: "strand", ground: "sand", obst: road ? null : null, road };
+  if (e > 0.75) return { biome: "berg", ground: "forest_floor", obst: "stone_wall" };
+  if (road) return { biome: m < 0.33 ? "öken" : m < 0.55 ? "äng" : m < 0.75 ? "skog" : "träsk", ground: "path", obst: null, road: true };
+  if (m < 0.33) return { biome: "öken", ground: "sand", obst: null };
+  if (m < 0.55) return { biome: "äng", ground: lattice(wx, wy, 9) < 0.08 ? "grass_flowers" : "grass", obst: null };
+  if (m < 0.75) return { biome: "skog", ground: "forest_floor", obst: null };
+  const pond = fbm(wx / 6, wy / 6, 4) > 0.66;
+  return { biome: "träsk", ground: "grass", obst: pond ? "water" : null, hi: e };
+}
+const BIOME_NAME = { äng: "ängarna", skog: "skogen", öken: "öknen", träsk: "träsket", sjö: "sjön", strand: "stranden", berg: "bergen" };
+
+// ----------------------------------------------------------------------------- vad som finns i en ruta (räknas ut utan att bygga rutan)
+function featureOf(cx, cy) {
+  if (cx === 0 && cy === 0) return "start";
+  const r = wgRng(cx, cy, 77), f = r(), d = Math.max(Math.abs(cx), Math.abs(cy));
+  const c = terrain(cx * WG.W + WG.W / 2, cy * WG.H + WG.H / 2).biome;
+  if (c === "sjö" || c === "berg") return f < 0.12 ? "skatt" : null;
+  if (f < 0.11 && d >= 1) return "grotta";
+  if (f < 0.24) return "by";
+  if (f < 0.35 && d >= 1) return "läger";
+  if (f < 0.42) return "helgedom";
+  if (f < 0.46 && d >= 3) return "bossarena";
+  if (f < 0.52) return "skatt";
+  return null;
+}
+const NAME_A = ["Moss", "Gran", "Sol", "Vind", "Ek", "Björk", "Sten", "Silver", "Dimm", "Varg", "Ugg", "Kråk", "Älg", "Guld", "Rim", "Myr", "Ljung", "Tall", "Örn", "Troll"];
+const NAME_B = { äng: ["ängen", "dalen", "heden", "slätten"], skog: ["skogen", "lunden", "snåret", "vildmarken"], öken: ["sanden", "öknen", "dynerna"], träsk: ["träsket", "myren", "kärret"], sjö: ["sjön", "viken"], strand: ["stranden", "udden"], berg: ["berget", "klippan", "kullen"] };
+function regionName(cx, cy) {
+  const rx = Math.floor(cx / 3), ry = Math.floor(cy / 3), r = wgRng(rx, ry, 501);
+  const b = terrain(cx * WG.W + WG.W / 2, cy * WG.H + WG.H / 2).biome;
+  return pick(r, NAME_A) + pick(r, NAME_B[b] || NAME_B.äng);
+}
+function dirWord(dx, dy) {
+  const ns = dy > 0 ? "norr" : dy < 0 ? "söder" : "", ew = dx > 0 ? "öster" : dx < 0 ? "väster" : "";
+  if (ns && ew && Math.abs(Math.abs(dx) - Math.abs(dy)) <= 1) return (dy > 0 ? "nord" : "syd") + (dx > 0 ? "ost" : "väst");
+  return (Math.abs(dx) > Math.abs(dy) ? ew : ns) + "ut";
+}
+function rumor(cx, cy, r) {
+  const want = pick(r, ["grotta", "grotta", "by", "bossarena", "helgedom"]);
+  let best = null;
+  for (let R = 1; R <= 5 && !best; R++)
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++)
+      if (Math.max(Math.abs(dx), Math.abs(dy)) === R && featureOf(cx + dx, cy + dy) === want) { if (!best) best = { dx, dy }; }
+  if (!best) return pick(r, ["Världen är större än man tror. Ingen har sett slutet på den.", "Gå åt vilket håll du vill – det finns alltid något nytt.", "Ädelstenar hittar man i buskar och krukor. Spara dem till köpmännen!"]);
+  const far = Math.max(Math.abs(best.dx), Math.abs(best.dy)), dist = far <= 1 ? "inte långt" : far <= 3 ? "en bit" : "långt";
+  const where = `${dist} ${dirWord(best.dx, best.dy)} härifrån`;
+  return {
+    grotta: `Det sägs att det finns en grotta ${where}. Där nere vaktar något en hjärtbehållare.`,
+    by: `Det finns en by ${where}. Där kan du handla.`,
+    bossarena: `Akta dig! ${where[0].toUpperCase() + where.slice(1)} bor ett fruktansvärt monster.`,
+    helgedom: `Någon har byggt en gammal helgedom ${where}. Man säger att det finns skatter där.`,
+  }[want];
+}
+
+// ----------------------------------------------------------------------------- bygga en bana
+function newLevel(name, w, h, title, music) {
+  return { version: 1, displayName: title, music: music || "", width: w, height: h, palette: [], ground: new Array(w * h).fill(-1), obstacles: new Array(w * h).fill(-1), objects: [], _name: name, _n: 0 };
+}
+function setT(L, layer, x, y, id) {
+  if (x < 0 || y < 0 || x >= L.width || y >= L.height) return;
+  let i = id ? L.palette.indexOf(id) : -1;
+  if (id && i < 0) { L.palette.push(id); i = L.palette.length - 1; }
+  (layer ? L.obstacles : L.ground)[y * L.width + x] = i;
+}
+const getT = (L, layer, x, y) => { const i = (layer ? L.obstacles : L.ground)[y * L.width + x]; return i >= 0 ? L.palette[i] : null; };
+function defaultsOf(type) {
+  const d = Object.assign({}, (objDef(type) || {}).defaults || {});
+  const ct = CONTENT_TYPES[type]; if (ct && ct.defaults) Object.assign(d, ct.defaults);
+  return d;
+}
+function put(L, type, x, y, params = {}, id = "") {
+  const p = Object.assign(defaultsOf(type), params);
+  L.objects.push({ uid: `${L._name}#${L._n++}`, type, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, id, p: Object.entries(p).map(([k, v]) => ({ k, v: String(v) })) });
+}
+// placeringar: figur/sak (fötter), hel ruta (dörrar, block), mitt (platser och trappor)
+const atF = (x, y) => [x + 0.5, y + 0.15], atT = (x, y) => [x + 0.5, y], atC = (x, y) => [x + 0.5, y + 0.5];
+function free(L, x, y, taken) {
+  if (x < 1 || y < 1 || x >= L.width - 1 || y >= L.height - 1) return false;
+  if (getT(L, 1, x, y)) return false;
+  return !taken.has(x + "," + y);
+}
+function freeRect(L, x0, y0, w, h, taken) { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (!free(L, x, y, taken) || getT(L, 0, x, y) === "sand" && L._lake) return false; return true; }
+function findRect(L, w, h, taken, r) {
+  const cx = Math.floor(L.width / 2 - w / 2), cy = Math.floor(L.height / 2 - h / 2);
+  const tries = [];
+  for (let dy = -7; dy <= 7; dy++) for (let dx = -10; dx <= 10; dx++) tries.push([cx + dx, cy + dy, Math.abs(dx) + Math.abs(dy) + r() * 3]);
+  tries.sort((a, b) => a[2] - b[2]);
+  for (const [x, y] of tries) if (freeRect(L, x, y, w, h, taken)) return { x, y };
+  return null;
+}
+function reserve(taken, x0, y0, w, h) { for (let y = y0 - 1; y < y0 + h + 1; y++) for (let x = x0 - 1; x < x0 + w + 1; x++) taken.add(x + "," + y); }
+function freeSpot(L, taken, r, n = 60) {
+  for (let i = 0; i < n; i++) { const x = 2 + Math.floor(r() * (L.width - 4)), y = 2 + Math.floor(r() * (L.height - 4)); if (free(L, x, y, taken)) { taken.add(x + "," + y); return { x, y }; } }
+  return null;
+}
+
+const LOOT = { 0: ["potion", "apple", "arrows", "bomb", "gem_blue"], 1: ["axe", "spear", "bow", "shield", "bomb", "potion", "feather", "dagger"], 2: ["hammer", "staff", "shield", "feather", "club", "potion"] };
+const lootFor = (d, r) => pick(r, LOOT[Math.min(2, Math.floor(d / 3))]);
+const MONSTERS = { äng: ["slime", "slime_red", "frog", "rat"], skog: ["wolf", "spider", "slime_blue", "bat"], öken: ["snake", "beetle", "e_skelett"], träsk: ["frog", "snake", "ghost", "slime_blue"], strand: ["slime", "frog", "beetle"], sjö: ["frog"], berg: ["bat", "beetle", "wolf"] };
+function monster(L, type, x, y, d, extra = {}) {
+  const base = CONTENT_TYPES[type] || {};
+  const hp = (base.hp || +(defaultsOf(type)["Health.maxHealth"] || 2)) + Math.floor(d / 2);
+  const p = Object.assign({ "Health.maxHealth": hp }, extra);
+  if (base.base === "monster" || type === "slime") p["SlimeEnemy.damage"] = (base.damage || 1) + Math.floor(d / 5);
+  else p["NPC.damage"] = 1 + Math.floor(d / 4);
+  put(L, type, ...atF(x, y), p);
+}
+const NAMES = ["Astrid", "Bosse", "Greta", "Harald", "Ingrid", "Kalle", "Maja", "Nils", "Olga", "Sven", "Tora", "Ulf", "Vera", "Elof", "Siri", "Gunnar", "Saga", "Egon"];
+const LOOKS = ["bybo", "bonde", "fiskare", "kock", "flicka", "munk", "jagare", "smed"];
+
+function buildChunk(cx, cy) {
+  const name = `vg:${cx},${cy}`, W = WG.W, H = WG.H, d = Math.max(Math.abs(cx), Math.abs(cy));
+  const L = newLevel(name, W, H, regionName(cx, cy));
+  const r = wgRng(cx, cy, 1);
+  const bio = {};
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const t = terrain(cx * W + x, cy * H + y);
+    setT(L, 0, x, y, t.ground); if (t.obst) setT(L, 1, x, y, t.obst);
+    bio[x + "," + y] = t;
+  }
+  const taken = new Set();
+  for (let x = 0; x < W; x++) { taken.add(x + ",0"); taken.add(x + "," + (H - 1)); }
+  for (let y = 0; y < H; y++) { taken.add("0," + y); taken.add(W - 1 + "," + y); }
+  for (const k in bio) if (bio[k].road) taken.add(k);
+  const centerBiome = terrain(cx * W + W / 2, cy * H + H / 2).biome;
+  const feat = featureOf(cx, cy);
+  const person = (x, y, extra = {}) => {
+    const rr = wgRng(cx, cy, x, y);
+    const nm = pick(rr, NAMES);
+    put(L, "person", ...atF(x, y), Object.assign({ "NPC.appearance": pick(rr, LOOKS), "NPC.speakerName": nm, "NPC.movement": pick(rr, ["StårStill", "FramOchTillbaka", "Vandrar"]), "NPC.paceDistance": 2,
+      "NPC.firstLines": `Hej, jag heter ${nm}.\n${rumor(cx, cy, rr)}`, "NPC.repeatLines": rumor(cx, cy, wgRng(cx, cy, x, y, 2)) }, extra));
+  };
+
+  // ---------------- särskilda platser
+  if (feat === "start") {
+    put(L, "spawn", ...atC(16, 11), { "SpawnPoint.facing": "Ner" }, "start");
+    put(L, "event", ...atC(16, 11), { "EventZone.lines": "Välkommen till en värld som aldrig tar slut!\nGå åt vilket håll du vill. Allt du hittar är nytt för varje äventyr.\nPrata med folk – de vet var grottor, byar och monster finns." , "EventZone.width": 2, "EventZone.height": 2 }, "valkommen");
+    put(L, "campfire", ...atF(14, 13)); put(L, "tent", ...atF(19, 14)); put(L, "chest", ...atF(13, 10), { "Chest.needsKey": "false", "Chest.gemReward": 10 });
+    put(L, "person", ...atF(18, 11), { "NPC.appearance": "morfar", "NPC.speakerName": "Den gamle vandraren", "NPC.movement": "StårStill",
+      "NPC.firstLines": `Så du vill se världen? Bra!\n${rumor(cx, cy, wgRng(1, 2, 3))}\nTa det här på vägen.`, "NPC.giveItem": "potion", "NPC.repeatLines": "Världen väntar. Gå nu!" });
+    reserve(taken, 12, 9, 9, 7);
+  } else if (feat === "by") {
+    const a = findRect(L, 14, 10, taken, r);
+    if (a) {
+      for (let y = a.y + 3; y < a.y + 7; y++) for (let x = a.x + 2; x < a.x + 12; x++) setT(L, 0, x, y, "path");
+      put(L, "house", ...atF(a.x + 3, a.y + 7)); put(L, "house", ...atF(a.x + 10, a.y + 7));
+      put(L, "well", ...atF(a.x + 7, a.y + 5));
+      put(L, "p_kopman", ...atF(a.x + 4, a.y + 2), { "NPC.speakerName": "Köpmannen", "NPC.movement": "StårStill", "NPC.firstLines": `Välkommen till ${L.displayName}!\nStäll dig framför en vara och tryck A för att köpa.` });
+      const wares = [["potion", 20, 1, 0], ["arrows", 10, 10, 0], ["bomb", 15, 3, 0], ["heart", 5, 1, 0], ["key", 30, 1, 0], [lootFor(d + 3, r), 40 + d * 5, 1, 1], ["heart_container", 100 + d * 10, 1, 1]];
+      const pickW = [wares[0], pick(r, wares.slice(1, 5)), r() < 0.5 ? wares[5] : wares[6]];
+      pickW.forEach((w, i) => put(L, "shop", ...atT(a.x + 3 + i, a.y + 1), { "ShopItem.itemId": w[0], "ShopItem.price": w[1], "ShopItem.amount": w[2], "ShopItem.stock": w[3] }));
+      person(a.x + 9, a.y + 3); if (r() < 0.7) person(a.x + 11, a.y + 5);
+      put(L, "lamppost", ...atF(a.x + 1, a.y + 4)); put(L, "lamppost", ...atF(a.x + 12, a.y + 4));
+      if (r() < 0.5) put(L, "haybale", ...atF(a.x + 12, a.y + 1)); else put(L, "woodpile", ...atF(a.x + 11, a.y + 1));
+      reserve(taken, a.x, a.y, 14, 10);
+    }
+  } else if (feat === "grotta") {
+    const a = findRect(L, 7, 7, taken, r);
+    if (a) {
+      const x0 = a.x + 1, y0 = a.y + 2;   // ruin 5×4 med öppning nere i mitten
+      for (let x = x0; x < x0 + 5; x++) { setT(L, 1, x, y0 + 3, "stone_wall"); if (x !== x0 + 2) setT(L, 1, x, y0, "stone_wall"); }
+      for (let y = y0; y < y0 + 4; y++) { setT(L, 1, x0, y, "stone_wall"); setT(L, 1, x0 + 4, y, "stone_wall"); }
+      for (let y = y0 + 1; y < y0 + 3; y++) for (let x = x0 + 1; x < x0 + 4; x++) setT(L, 0, x, y, "forest_floor");
+      put(L, "stairs_down", ...atC(x0 + 2, y0 + 2), { "Door.targetLevel": `vgd:${cx},${cy}`, "Door.targetPlace": "fran_ytan" }, "grottan");
+      put(L, "spawn", ...atC(x0 + 2, y0 - 1), { "SpawnPoint.facing": "Ner" }, "fran_grottan");
+      put(L, "torch_stand", ...atF(x0 + 1, y0 - 1)); put(L, "torch_stand", ...atF(x0 + 3, y0 - 1));
+      reserve(taken, a.x, a.y, 7, 7);
+    }
+  } else if (feat === "läger") {
+    const a = findRect(L, 8, 6, taken, r);
+    if (a) {
+      put(L, "tent", ...atF(a.x + 2, a.y + 4)); put(L, "campfire", ...atF(a.x + 5, a.y + 2)); put(L, "crate", ...atF(a.x + 7, a.y + 4));
+      put(L, "chest", ...atF(a.x + 6, a.y + 4), r() < 0.5 ? { "Chest.needsKey": "false", "Chest.gemReward": 15 + d * 5 } : { "Chest.needsKey": "false", "Chest.itemId": lootFor(d, r), "Chest.gemReward": 0 });
+      const foes = d < 3 ? ["e_goblin", "e_bandit"] : d < 6 ? ["e_bandit", "e_ork", "e_goblin"] : ["e_ork", "e_morkriddare", "e_skelett"];
+      for (let i = 0; i < 2 + Math.min(3, Math.floor(d / 2)); i++) monster(L, pick(r, foes), a.x + 1 + Math.floor(r() * 6), a.y + 1 + Math.floor(r() * 4), d);
+      reserve(taken, a.x, a.y, 8, 6);
+    }
+  } else if (feat === "helgedom") {
+    const a = findRect(L, 7, 6, taken, r);
+    if (a) {
+      put(L, "statue", ...atF(a.x + 3, a.y + 4)); put(L, "pillar", ...atF(a.x + 1, a.y + 3)); put(L, "pillar", ...atF(a.x + 5, a.y + 3));
+      put(L, "flowers", ...atF(a.x + 2, a.y + 1)); put(L, "flowers", ...atF(a.x + 4, a.y + 1));
+      put(L, "chest", ...atF(a.x + 3, a.y + 2), { "Chest.needsKey": "true", "Chest.itemId": r() < 0.35 ? "heart_container" : lootFor(d + 2, r), "Chest.gemReward": 0 });
+      put(L, "key", ...atF(...[freeSpot(L, taken, r) || { x: a.x, y: a.y }].map(s => [s.x, s.y])[0]));
+      reserve(taken, a.x, a.y, 7, 6);
+    }
+  } else if (feat === "bossarena") {
+    const a = findRect(L, 10, 8, taken, r);
+    if (a) {
+      for (const [x, y] of [[0, 0], [9, 0], [0, 7], [9, 7], [0, 4], [9, 4]]) put(L, "pillar", ...atF(a.x + x, a.y + y));
+      const boss = pick(r, ["boss_slimekung", "boss_morkriddare", "boss_haxmastare"]);
+      const bname = { boss_slimekung: "Slimekungen", boss_morkriddare: "Svartriddaren", boss_haxmastare: "Häxmästaren" }[boss] + " från " + L.displayName;
+      put(L, boss, ...atF(a.x + 5, a.y + 4), { "BossInfo.bossName": bname, "Health.maxHealth": 14 + d * 2, "NPC.drops": "gem_red:100;potion:60" });
+      put(L, "gravestone", ...atF(a.x + 2, a.y + 6)); put(L, "gravestone", ...atF(a.x + 7, a.y + 6));
+      reserve(taken, a.x, a.y, 10, 8);
+    }
+  } else if (feat === "skatt") {
+    const s = freeSpot(L, taken, r);
+    if (s) put(L, "chest", ...atF(s.x, s.y), { "Chest.needsKey": "false", "Chest.itemId": r() < 0.5 ? lootFor(d, r) : "", "Chest.gemReward": 10 + d * 5 });
+  }
+
+  // ---------------- natur
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    if (taken.has(x + "," + y) || getT(L, 1, x, y)) continue;
+    const t = bio[x + "," + y], q = lattice(cx * W + x, cy * H + y, 31);
+    const near = (dx, dy) => taken.has((x + dx) + "," + (y + dy));
+    let type = null;
+    if (t.biome === "skog") type = q < 0.15 ? "tree" : q < 0.19 ? "bush" : q < 0.2 ? "stump" : q < 0.21 ? "big_mushroom" : null;
+    else if (t.biome === "äng") type = q < 0.02 ? "tree" : q < 0.06 ? "bush" : q < 0.075 ? "rock" : q < 0.1 ? "flowers" : null;
+    else if (t.biome === "öken") type = q < 0.03 ? "rock" : q < 0.034 ? "crystal_big" : q < 0.037 ? "gravestone" : null;
+    else if (t.biome === "träsk") type = q < 0.03 ? "tree" : q < 0.06 ? "big_mushroom" : q < 0.09 ? "bush" : null;
+    else if (t.biome === "strand") type = q < 0.02 ? "rock" : null;
+    if (!type) continue;
+    if (type === "tree" && (near(-1, 0) || near(0, -1))) continue;   // inga täta väggar av träd
+    put(L, type, ...atF(x, y));
+    if (type !== "flowers") taken.add(x + "," + y);
+  }
+  if (r() < 0.25) { const s = freeSpot(L, taken, r); if (s) put(L, "pot", ...atF(s.x, s.y)); }
+
+  // ---------------- monster, saker och vandrare
+  if (feat !== "start" && feat !== "by") {
+    const list = MONSTERS[centerBiome] || MONSTERS.äng;
+    const n = 1 + Math.floor(r() * 3) + Math.min(3, Math.floor(d / 2));
+    for (let i = 0; i < n; i++) { const s = freeSpot(L, taken, r); if (s) monster(L, pick(r, list), s.x, s.y, d); }
+  }
+  for (let i = 0, n = Math.floor(r() * 3); i < n; i++) {
+    const s = freeSpot(L, taken, r); if (!s) continue;
+    const it = pick(r, ["gem_green", "gem_green", "gem_blue", "heart", "item"]);
+    if (it === "item") put(L, "item", ...atF(s.x, s.y), { "Pickup.itemId": pick(r, centerBiome === "skog" ? ["mushroom", "apple", "arrows"] : centerBiome === "öken" ? ["bone", "crystal", "gem_purple"] : ["apple", "flower", "egg", "carrot"]) });
+    else put(L, it, ...atF(s.x, s.y));
+  }
+  if (feat !== "by" && feat !== "start" && r() < 0.18) { const s = freeSpot(L, taken, r); if (s) person(s.x, s.y); }
+  delete L._n; delete L._name;
+  return L;
+}
+
+// ----------------------------------------------------------------------------- grottor (rum i ett 3×3-rutnät)
+function buildDungeon(cx, cy) {
+  const name = `vgd:${cx},${cy}`, d = Math.max(Math.abs(cx), Math.abs(cy)) + 1;
+  const CW = 10, CH = 9, W = 3 * CW + 1, H = 3 * CH + 1;
+  const L = newLevel(name, W, H, "Grottan under " + regionName(cx, cy), "dungeon");
+  const r = wgRng(cx, cy, 2);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { setT(L, 0, x, y, "dungeon_floor"); setT(L, 1, x, y, "dungeon_wall"); }
+  const room = (i, j) => ({ x0: i * CW + 1, y0: j * CH + 1, x1: i * CW + CW - 1, y1: j * CH + CH - 1 });
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const R = room(i, j); for (let y = R.y0; y <= R.y1; y++) for (let x = R.x0; x <= R.x1; x++) setT(L, 1, x, y, null); }
+  // spännträd från ingången (nere i mitten)
+  const key = (i, j) => i + "," + j, seen = new Set([key(1, 0)]), edges = [], depth = { [key(1, 0)]: 0 }, parent = {};
+  const stack = [[1, 0]];
+  while (stack.length) {
+    const [i, j] = stack[stack.length - 1];
+    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => [i + a, j + b]).filter(([a, b]) => a >= 0 && b >= 0 && a < 3 && b < 3 && !seen.has(key(a, b)));
+    if (!nb.length) { stack.pop(); continue; }
+    const [a, b] = pick(r, nb); seen.add(key(a, b)); edges.push([[i, j], [a, b]]); depth[key(a, b)] = depth[key(i, j)] + 1; parent[key(a, b)] = [i, j]; stack.push([a, b]);
+  }
+  const doorTile = ([i, j], [a, b]) => a !== i ? { x: Math.max(i, a) * CW, y: j * CH + 5 } : { x: i * CW + 5, y: Math.max(j, b) * CH };
+  const leaves = Object.keys(depth).filter(k => !edges.some(([p]) => key(...p) === k) && k !== key(1, 0)).sort((a, b) => depth[b] - depth[a]);
+  const bossRoom = leaves[0];
+  // stora nyckeln: i en annan återvändsgränd bakom en låst dörr, annars i det djupaste andra rummet
+  const keyRoom = leaves[1] || Object.keys(depth).filter(k => k !== bossRoom && k !== key(1, 0)).sort((a, b) => depth[b] - depth[a])[0];
+  const lockKeyRoom = !!leaves[1];
+  for (const [p, c] of edges) {
+    const t = doorTile(p, c); setT(L, 1, t.x, t.y, null);
+    const ck = key(...c);
+    if (ck === bossRoom) put(L, "boss_door", ...atT(t.x, t.y));
+    else if (ck === keyRoom && lockKeyRoom) put(L, "locked_door", ...atT(t.x, t.y));
+  }
+  // ett extra hål mellan två rum gör det mindre linjärt
+  if (r() < 0.6) { const t = doorTile([0, 1], [1, 1]); setT(L, 1, t.x, t.y, null); }
+  const E = room(1, 0);
+  put(L, "stairs_up", ...atC(15, E.y0), { "Door.targetLevel": `vg:${cx},${cy}`, "Door.targetPlace": "fran_grottan" }, "upp");
+  put(L, "spawn", ...atC(15, E.y0 + 2), { "SpawnPoint.facing": "Upp" }, "fran_ytan");
+  put(L, "spawn", ...atC(15, E.y0 + 2), { "SpawnPoint.facing": "Upp" }, "start");
+  put(L, "torch_stand", ...atF(E.x0, E.y1)); put(L, "torch_stand", ...atF(E.x1, E.y1));
+  const foes = ["bat", "e_skelett", "spider", "ghost", "slime_blue", "rat"].concat(d > 3 ? ["e_zombie", "e_ork"] : []);
+  const rooms = Object.keys(depth);
+  const smallKeyRoom = pick(r, rooms.filter(k => k !== bossRoom && k !== keyRoom && k !== key(1, 0))) || key(1, 0);
+  for (const k of rooms) {
+    const [i, j] = k.split(",").map(Number), R = room(i, j), mx = Math.floor((R.x0 + R.x1) / 2), my = Math.floor((R.y0 + R.y1) / 2);
+    const spot = () => [R.x0 + 1 + Math.floor(r() * (R.x1 - R.x0 - 1)), R.y0 + 1 + Math.floor(r() * (R.y1 - R.y0 - 1))];
+    if (k === bossRoom) {
+      for (let x = mx - 1; x <= mx + 1; x++) for (let y = R.y0; y <= R.y1; y++) setT(L, 0, x, y, "carpet_red");
+      const boss = pick(r, ["boss_slimekung", "boss_morkriddare", "boss_haxmastare"]);
+      const nm = pick(r, ["Grottans väktare", "Den gamle i mörkret", "Skuggornas herre", "Benkungen", "Mossjätten"]);
+      put(L, boss, ...atF(mx, my), { "BossInfo.bossName": nm, "Health.maxHealth": 12 + d * 3, "NPC.drops": "gem_red:100;gem_red:60" });
+      put(L, "chest", ...atF(mx, R.y1 - 1), { "Chest.needsKey": "false", "Chest.gemReward": 40 + d * 10 });
+      continue;
+    }
+    if (k === keyRoom) { put(L, "chest", ...atF(mx, my), { "Chest.needsKey": "false", "Chest.itemId": "big_key", "Chest.gemReward": 0 }); }
+    if (k === smallKeyRoom && lockKeyRoom) put(L, "key", ...atF(mx + 2, R.y0 + 3));
+    if (k !== key(1, 0) && k !== keyRoom && r() < 0.45) {   // pussel: knuffa blocket till brytaren så öppnas gallret till en skatt
+      const f = `vgd${cx}_${cy}_${i}${j}`;
+      put(L, "switch", ...atT(R.x0 + 1, R.y0 + 1), { "FloorSwitch.flag": f });
+      put(L, "push_block", ...atT(R.x0 + 4, R.y0 + 1));
+      for (let x = R.x1 - 2; x <= R.x1; x++) setT(L, 1, x, R.y1 - 2, "dungeon_wall");
+      setT(L, 1, R.x1 - 2, R.y1 - 1, "dungeon_wall"); setT(L, 1, R.x1 - 2, R.y1, null);
+      put(L, "gate", ...atT(R.x1 - 2, R.y1), { "Gate.flag": f });
+      put(L, "chest", ...atF(R.x1, R.y1), { "Chest.needsKey": "false", "Chest.itemId": r() < 0.5 ? "heart_container" : lootFor(d + 2, r), "Chest.gemReward": 0 });
+    } else if (r() < 0.4) {
+      for (let x = mx - 2; x <= mx + 2; x++) if (x !== mx) put(L, "pit", ...atT(x, my));
+    }
+    const n = k === key(1, 0) ? 1 : 2 + Math.floor(r() * 2) + Math.floor(d / 3);
+    for (let q = 0; q < n; q++) monster(L, pick(r, foes), ...spot(), d);
+    if (r() < 0.4) put(L, "pot", ...atF(...spot()));
+    put(L, "torch_stand", ...atF(R.x0, R.y1));
+  }
+  delete L._n; delete L._name;
+  return L;
+}
+
+// ----------------------------------------------------------------------------- koppla in i spelet
+getLevel = (function (orig) {
+  return function (name) {
+    if (typeof name !== "string" || !/^vgd?:/.test(name)) return orig(name);
+    if (WG.cacheSeed !== G.worldSeed) { WG.cache.clear(); WG.cacheSeed = G.worldSeed; }
+    if (!WG.cache.has(name)) {
+      const m = name.match(/^(vgd?):(-?\d+),(-?\d+)$/); if (!m) return null;
+      WG.cache.set(name, m[1] === "vg" ? buildChunk(+m[2], +m[3]) : buildDungeon(+m[2], +m[3]));
+      if (WG.cache.size > 40) WG.cache.delete(WG.cache.keys().next().value);
+    }
+    return WG.cache.get(name);
+  };
+})(getLevel);
+
+function newWorld() {
+  stopSplash(); closeMenu(); G.removed = {}; G.playTime = 0;
+  G.worldSeed = (Math.random() * 2147483647) | 0; G.visited = new Set(["0,0"]); WG.lastRegion = "";
+  startGame("vg:0,0");
+  G.inv.sword = true; G.lastAuto = G.time;
+  WG.lastRegion = getLevel("vg:0,0").displayName;
+  showMessage(WG.lastRegion, 3);
+}
+const chunkXY = name => { const m = /^vg:(-?\d+),(-?\d+)$/.exec(name || ""); return m ? [+m[1], +m[2]] : null; };
+
+// gå över kanten -> nästa ruta
+function worldEdgeTick() {
+  if (!ready || G.busy || dialog.open || G.menu || !G.level) return;
+  const c = chunkXY(G.levelName); if (!c) return;
+  const p = G.player; if (!p || p.dead || p.fallUntil) return;
+  const mv = IN[0] && IN[0].move || { x: 0, y: 0 }, W = G.level.width, H = G.level.height;
+  let dx = 0, dy = 0;
+  if (p.x < 0.34 && mv.x < -0.3) dx = -1; else if (p.x > W - 0.34 && mv.x > 0.3) dx = 1;
+  else if (p.y < 0.06 && mv.y < -0.3) dy = -1; else if (p.y > H - 0.36 && mv.y > 0.3) dy = 1;
+  if (!dx && !dy) return;
+  const nx = c[0] + dx, ny = c[1] + dy;
+  const spot = { x: dx < 0 ? W - 0.5 : dx > 0 ? 0.5 : p.x, y: dy < 0 ? H - 0.45 : dy > 0 ? 0.1 : p.y, dx, dy };
+  G.busy = true;
+  fadeTo(1, 0.14, () => {
+    loadLevel(`vg:${nx},${ny}`); G.pristine = JSON.stringify(G.level);
+    G.edgeSpot = spot; place("__edge");
+    (G.visited || (G.visited = new Set())).add(nx + "," + ny);
+    const rn = G.level.displayName;
+    if (rn !== WG.lastRegion) { WG.lastRegion = rn; showMessage(rn, 2.5); }
+    fadeTo(0, 0.14, () => { G.busy = false; });
+  });
+}
+place = (function (orig) {
+  return function (id) {
+    if (id !== "__edge" || !G.edgeSpot) return orig(id);
+    G.lastPlace = "__edge";
+    const p = G.player, s = G.edgeSpot;
+    p.x = s.x; p.y = s.y; p.knockUntil = 0;
+    // står det något i vägen: leta längs kanten
+    if (blocked(p, p.x, p.y)) {
+      outer: for (let k = 1; k < 24; k++) for (const sg of [1, -1]) {
+        const tx = s.dx ? s.x : s.x + sg * k * 0.5, ty = s.dy ? s.y : s.y + sg * k * 0.5;
+        const ix = s.dx ? s.x - s.dx * k * 0.5 : tx, iy = s.dy ? s.y - s.dy * k * 0.5 : ty;
+        for (const [qx, qy] of [[tx, ty], [ix, iy]]) if (qx > 0.3 && qy > 0 && qx < G.level.width - 0.3 && qy < G.level.height - 0.3 && !blocked(p, qx, qy)) { p.x = qx; p.y = qy; break outer; }
+      }
+    }
+    for (const q of G.players) { q.safe = { x: p.x, y: p.y }; q.fallUntil = 0; q.scale = undefined; }
+    placeP2(); G.doorBlockedUntil = G.time + 0.4; snapCamera();
+  };
+})(place);
+updateFx = (function (orig) { return function (dt) { orig(dt); worldEdgeTick(); }; })(updateFx);
+
+// spara och ladda världen
+snapshotGame = (function (orig) { return function () { const d = orig(); if (G.worldSeed !== undefined && G.worldSeed !== null) { d.worldSeed = G.worldSeed; d.visited = [...(G.visited || [])]; if (inWorld()) d.levelTitle = "Utforska · " + d.levelTitle; } return d; }; })(snapshotGame);
+loadGame = (function (orig) {
+  return function (d) {
+    G.worldSeed = d.worldSeed !== undefined ? d.worldSeed : null; G.visited = new Set(d.visited || []); WG.lastRegion = "";
+    const r = orig(d);
+    if (inWorld()) { G.edgeSpot = { x: G.player.x, y: G.player.y, dx: 0, dy: 0 }; G.lastPlace = "__edge"; }
+    return r;
+  };
+})(loadGame);
+newGame = (function (orig) { return function () { G.worldSeed = null; G.visited = new Set(); return orig(); }; })(newGame);
+
+// meny: Nytt spel -> välj Utforska eller Anpassad värld
+function screenNewGame() {
+  const warn = (gameInProgress() && MENU.mode === "pause") || !!latestSave();
+  const go = (label, fn) => () => (warn ? confirmScreen(`Starta ${label.toLowerCase()}?`, "Det du inte har sparat försvinner.", label, fn) : fn());
+  return { title: "NYTT SPEL", note: "Utforska är en oändlig värld som slumpas fram – ny för varje äventyr. Anpassad värld är era egna banor.", items: [
+    { label: "Utforska", sub: "Oändlig slumpad värld", act: go("Utforska", newWorld) },
+    { label: "Anpassad värld", sub: "Hemma, Skogen, Ruinen och era egna banor", act: go("Anpassad värld", newGame) },
+    { label: "Tillbaka", back: true, act: popScreen },
+  ] };
+}
+screenMain = (function (orig) {
+  return function () {
+    const sc = orig();
+    const it = sc.items.find(i => i.label === "Nytt spel");
+    if (it) { it.act = () => pushScreen(screenNewGame); it.arrow = true; }
+    return sc;
+  };
+})(screenMain);
+
+// karta och platsnamn i hörnet
+drawHud = (function (orig) {
+  return function () {
+    orig();
+    const c = chunkXY(G.levelName); if (!c || !G.player) return;
+    const s = ui.s, Wc = canvas.width, cell = 5 * s, R = 3;
+    const x0 = Wc - 8 * s - safeRight() - (2 * R + 1) * cell, y0 = 6 * s + safeTop() + 26 * s;
+    panel(x0 - 3 * s, y0 - 3 * s, (2 * R + 1) * cell + 6 * s, (2 * R + 1) * cell + 16 * s, 0.75);
+    const COL = { äng: "#6fbf4e", skog: "#2f7a3a", öken: "#d9c27a", träsk: "#4f7a5a", sjö: "#3a74c4", strand: "#e3d49a", berg: "#7a7a8c" };
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const k = (c[0] + dx) + "," + (c[1] + dy), px = x0 + (dx + R) * cell, py = y0 + (R - dy) * cell;
+      if (!(G.visited && G.visited.has(k)) && !(dx === 0 && dy === 0)) { ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(px, py, cell - 1, cell - 1); continue; }
+      const t = terrain((c[0] + dx) * WG.W + WG.W / 2, (c[1] + dy) * WG.H + WG.H / 2);
+      ctx.fillStyle = COL[t.biome] || "#6fbf4e"; ctx.fillRect(px, py, cell - 1, cell - 1);
+      const f = featureOf(c[0] + dx, c[1] + dy);
+      if (f === "by" || f === "grotta" || f === "bossarena") { ctx.fillStyle = f === "by" ? "#ffd166" : f === "grotta" ? "#1a1022" : "#e04050"; ctx.fillRect(px + cell / 2 - s, py + cell / 2 - s, 2 * s, 2 * s); }
+    }
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(1, s / 2);
+    ctx.strokeRect(x0 + R * cell - 0.5, y0 + R * cell - 0.5, cell, cell);
+    text(G.level.displayName, x0 + (2 * R + 1) * cell / 2, y0 + (2 * R + 1) * cell + 2 * s, 5 * s, "#fff", "center");
+  };
+})(drawHud);
 
 // ----------------------------------------------------------------------------- start
 window.Pontlife = { G, give, travel, startGame, dialog, ED, STORE, STUDIO, edShow, openStudio, undo, redo, commit, applyOp };

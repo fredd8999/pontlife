@@ -1,0 +1,23 @@
+PONTLIFE – webbapp som fungerar utan internet
+
+PÅ DATORN
+  Dubbelklicka på index.html. Spelet och editorn fungerar direkt.
+
+PÅ IPHONEN
+  iPhonen kan inte köra en html-fil direkt från Filer, så mappen behöver
+  ligga på en webbadress EN gång. Sedan fungerar appen utan internet.
+
+  Enklast (gratis): GitHub Pages
+    1. Skapa ett konto på github.com och ett nytt publikt repo, t.ex. "pontlife".
+    2. "Add file" -> "Upload files" -> dra in ALLA filer i den här mappen -> Commit.
+    3. Settings -> Pages -> Branch: main, mapp: / (root) -> Save.
+    4. Efter någon minut: https://DITTNAMN.github.io/pontlife/
+    5. Öppna adressen i Safari på iPhonen -> Dela -> Lägg till på hemskärmen.
+    6. Starta från ikonen en gång med internet. Därefter fungerar den offline.
+
+SPARA OCH DELA
+  Allt sparas i appen på telefonen.
+  Byggläget -> Meny -> Dela banan: mail, AirDrop, Meddelanden.
+  Byggläget -> Meny -> Importera: välj filen du fått (spara den i Filer först).
+  Byggläget -> Meny -> Spara allt som fil: säkerhetskopia (gör det ibland!).
+  Zip-filen fungerar också i Unity: packa upp i Assets/StreamingAssets.
